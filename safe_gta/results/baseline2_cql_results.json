@@ -1,0 +1,8 @@
+{
+  "normalized_return": 1.0,
+  "safety_success_rate": 1.0,
+  "constraint_violation_cost": 0.0,
+  "method": "CQL_GTA_no_safety",
+  "dataset": "safe_gta/data/augmented_no_safety.pkl",
+  "n_epochs": 50
+}

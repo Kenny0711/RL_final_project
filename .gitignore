@@ -1,0 +1,7 @@
+check_env.py
+Final Project 說明.md
+Baseline and Toy Task.md
+.claude/
+__pycache__/
+*.py[cod]
+.DS_Store
