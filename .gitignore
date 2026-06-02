@@ -5,3 +5,7 @@ Baseline and Toy Task.md
 __pycache__/
 *.py[cod]
 .DS_Store
+*.hdf5
+*.npz
+*.tar.gz
+*.zip
