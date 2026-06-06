@@ -1,0 +1,8 @@
+{
+  "normalized_return": 0.3806,
+  "safety_success_rate": 0.0,
+  "constraint_violation_cost": 5.4962,
+  "method": "CQL_no_augmentation",
+  "dataset": "medium",
+  "n_epochs": 50
+}

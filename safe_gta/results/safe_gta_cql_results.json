@@ -1,8 +1,0 @@
-{
-  "normalized_return": 1.0,
-  "safety_success_rate": 0.0,
-  "constraint_violation_cost": 17.8172,
-  "method": "CQL_Safe_GTA",
-  "dataset": "safe_gta/data/augmented_safe_gta_t25_beta20.pkl",
-  "n_epochs": 50
-}

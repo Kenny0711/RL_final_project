@@ -5,7 +5,7 @@ This script does not modify the 3D validation pipeline. It only reads action
 sequences and creates a high-resolution 2D comparison figure.
 
 Preferred input:
-    safe_gta/results/repair_3d_actions.npz
+    safe_gta/results/artifacts/repair_3d_actions.npz
 
 Fallback inputs:
     data/processed/metadrive_bad.npz
@@ -32,10 +32,10 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-DEFAULT_ACTIONS_NPZ = PROJECT_ROOT / "safe_gta" / "results" / "repair_3d_actions.npz"
+DEFAULT_ACTIONS_NPZ = PROJECT_ROOT / "safe_gta" / "results" / "artifacts" / "repair_3d_actions.npz"
 DEFAULT_BAD_NPZ = PROJECT_ROOT / "data" / "processed" / "metadrive_bad.npz"
 DEFAULT_REPAIRED_NPY = PROJECT_ROOT / "data" / "processed" / "repaired_actions.npy"
-DEFAULT_OUTPUT = PROJECT_ROOT / "safe_gta" / "results" / "safe_gta_final_poster.png"
+DEFAULT_OUTPUT = PROJECT_ROOT / "safe_gta" / "results" / "figure" / "safe_gta_final_poster.png"
 
 
 def apply_safety_guidance(states, actions, critic_model, guidance_scale=0.05):

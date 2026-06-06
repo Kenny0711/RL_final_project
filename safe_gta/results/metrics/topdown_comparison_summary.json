@@ -1,0 +1,26 @@
+{
+  "seed": 42,
+  "baseline": {
+    "name": "baseline",
+    "steps": 60,
+    "total_reward": 29.557197231972417,
+    "total_cost": 1.0,
+    "terminated": true,
+    "truncated": false,
+    "crash": false,
+    "out_of_road": true,
+    "arrive_dest": false
+  },
+  "repaired": {
+    "name": "repaired",
+    "steps": 130,
+    "total_reward": 62.28563222984975,
+    "total_cost": 0.0,
+    "terminated": false,
+    "truncated": false,
+    "crash": false,
+    "out_of_road": false,
+    "arrive_dest": false
+  },
+  "note": "Native MetaDrive top-down render. Repair hook is currently mock steering repair."
+}

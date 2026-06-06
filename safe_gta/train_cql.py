@@ -254,7 +254,7 @@ def train(env: str = "MetaDrive", dataset: str = "medium",
           n_epochs: int = 50, batch_size: int = 256,
           lr: float = 3e-4, alpha: float = 1.0,
           device: str = None):
-    output_dir = os.path.join(_PROJECT_ROOT, "safe_gta", "results")
+    output_dir = os.path.join(_PROJECT_ROOT, "safe_gta", "results", "metrics")
     ckpt_dir   = os.path.join(_PROJECT_ROOT, "safe_gta", "checkpoints")
 
     if device is None:

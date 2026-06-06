@@ -28,7 +28,7 @@
 
 Loss 曲線收斂穩定
 
-![訓練 Loss 曲線](safe_gta/results/training_loss.png)
+![訓練 Loss 曲線](safe_gta/results/toy_task_results/training_loss.png)
 
 ### 資料
 
@@ -54,13 +54,13 @@ Loss 曲線收斂穩定
 下排：修復後（藍色）。
 綠色虛線：理想直線（y=0）。
 
-![修復前後對比](safe_gta/results/repair_comparison.png)
+![修復前後對比](safe_gta/results/toy_task_results/repair_comparison.png)
 
 **去噪過程動畫：**
 
 從 t=150（加噪後，紅色）逐步去噪到 t=0（修復完成，藍色）的過程。
 
-![去噪時間序列](safe_gta/results/denoising_timelapse.png)
+![去噪時間序列](safe_gta/results/toy_task_results/denoising_timelapse.png)
 
 
 ### 結論
@@ -184,13 +184,6 @@ Return 還算合理（0.81），但 Safety Success Rate = 0 — 代表 agent 從
 ```bash
 conda activate safe_gta
 cd "path/to/final project"
-
-# Toy Task 1
-python -m safe_gta.toy_task1.train
-python -m safe_gta.toy_task1.evaluate --checkpoint safe_gta/checkpoints/toy_task1_final.pt --start_t 150
-
-# Toy Task 3
-python -m safe_gta.toy_task3_critic
 
 # Baseline 1
 python -m safe_gta.train_cql

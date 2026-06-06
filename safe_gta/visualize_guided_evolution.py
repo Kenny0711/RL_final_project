@@ -22,7 +22,7 @@ sys.path.insert(0, _PROJECT_ROOT)
 from safe_gta.generate_safe_gta import denormalize, load_ddpm, normalize
 from safe_gta.safety_critic import load_checkpoint as load_critic_checkpoint
 
-RESULTS_DIR = os.path.join(_PROJECT_ROOT, "safe_gta", "results")
+RESULTS_DIR = os.path.join(_PROJECT_ROOT, "safe_gta", "results", "figure")
 DATA_DIR = os.path.join(_PROJECT_ROOT, "safe_gta", "data")
 CKPT_DIR = os.path.join(_PROJECT_ROOT, "safe_gta", "checkpoints")
 

@@ -261,16 +261,19 @@ def save_outputs(
     summaries: List[EpisodeSummary],
     output_dir: Path,
 ) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
+    metrics_dir = output_dir / "metrics"
+    artifacts_dir = output_dir / "artifacts"
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
     np.savez(
-        output_dir / "repair_3d_actions.npz",
+        artifacts_dir / "repair_3d_actions.npz",
         bad_actions=bad_actions,
         safe_actions=safe_actions,
     )
-    with open(output_dir / "repair_3d_summary.json", "w", encoding="utf-8") as f:
+    with open(metrics_dir / "repair_3d_summary.json", "w", encoding="utf-8") as f:
         json.dump([asdict(s) for s in summaries], f, indent=2)
-    print(f"\nSaved actions: {output_dir / 'repair_3d_actions.npz'}")
-    print(f"Saved summary: {output_dir / 'repair_3d_summary.json'}")
+    print(f"\nSaved actions: {artifacts_dir / 'repair_3d_actions.npz'}")
+    print(f"Saved summary: {metrics_dir / 'repair_3d_summary.json'}")
 
 
 def evaluate_and_render_3d(args: argparse.Namespace) -> None:

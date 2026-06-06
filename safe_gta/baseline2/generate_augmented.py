@@ -111,7 +111,6 @@ def generate_augmented_dataset(
     if ddpm_checkpoint is None:
         candidates = [
             os.path.join(ckpt_dir, "diffusion_metadrive_final.pt"),
-            os.path.join(ckpt_dir, "toy_task1_final.pt"),
         ]
         for c in candidates:
             if os.path.exists(c):

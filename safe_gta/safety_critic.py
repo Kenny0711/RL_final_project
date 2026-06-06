@@ -115,9 +115,11 @@ def train(
 ):
     data_dir = os.path.join(_PROJECT_ROOT, "safe_gta", "data")
     ckpt_dir = os.path.join(_PROJECT_ROOT, "safe_gta", "checkpoints")
-    results_dir = os.path.join(_PROJECT_ROOT, "safe_gta", "results")
+    results_dir = os.path.join(_PROJECT_ROOT, "safe_gta", "results", "metrics")
+    figures_dir = os.path.join(_PROJECT_ROOT, "safe_gta", "results", "final_figures")
     os.makedirs(ckpt_dir, exist_ok=True)
     os.makedirs(results_dir, exist_ok=True)
+    os.makedirs(figures_dir, exist_ok=True)
 
     if hdf5_path is None:
         hdf5_path = find_hdf5(data_dir)
@@ -206,7 +208,7 @@ def train(
     print(f"Results saved: {results_path}")
 
     plot_name = "_debug_safety_critic_costs.png" if "_debug" in os.path.basename(output_path).lower() else "metadrive_safety_critic_costs.png"
-    save_cost_plot(model, x_val, y_val, results_dir, plot_name=plot_name, device=device)
+    save_cost_plot(model, x_val, y_val, figures_dir, plot_name=plot_name, device=device)
     return model, metrics
 
 

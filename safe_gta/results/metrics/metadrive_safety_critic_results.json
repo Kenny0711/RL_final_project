@@ -1,0 +1,7 @@
+{
+  "accuracy": 0.991975,
+  "safe_mean_cost": 0.006515555549412966,
+  "danger_mean_cost": 0.9812161922454834,
+  "safe_pass_rate": 0.9951575058659078,
+  "danger_pass_rate": 0.9797185637738495
+}
