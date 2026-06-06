@@ -2,6 +2,28 @@ check_env.py
 Final Project 說明.md
 Baseline and Toy Task.md
 .claude/
+.pdf_extract/
+report.pdf
+*projectproposal.pdf
+*_projectproposal.pdf
+
+# Large data files (>50 MB, not suitable for git)
+*.hdf5
+safe_gta/data/*.pkl
+safe_gta/data/*.npz
+safe_gta/**/data/*.pkl
+safe_gta/**/data/*.npz
+safe_gta/results/*.npz
+
+# Model checkpoints
+safe_gta/checkpoints/*.pt
+safe_gta/**/checkpoints/*.pt
+
+# Debug artifacts (legacy patterns kept for compatibility)
+safe_gta/data/_debug_*.pkl
+safe_gta/checkpoints/_debug_*.pt
+safe_gta/results/_debug_*.json
+
 __pycache__/
 *.py[cod]
 .DS_Store

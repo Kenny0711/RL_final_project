@@ -1,0 +1,24 @@
+[
+  {
+    "name": "baseline_bad",
+    "steps": 60,
+    "total_reward": 29.557197231972417,
+    "total_cost": 1.0,
+    "terminated": true,
+    "truncated": false,
+    "crashed": false,
+    "out_of_road": true,
+    "arrive_dest": false
+  },
+  {
+    "name": "safe_gta_repaired",
+    "steps": 60,
+    "total_reward": 36.23373886000375,
+    "total_cost": 0.0,
+    "terminated": false,
+    "truncated": false,
+    "crashed": false,
+    "out_of_road": false,
+    "arrive_dest": false
+  }
+]

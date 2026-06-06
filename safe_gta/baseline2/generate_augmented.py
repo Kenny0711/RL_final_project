@@ -1,17 +1,17 @@
 """
-Baseline 2 — GTA without safety constraints
-Generates an augmented dataset using the trained Toy Task 1 diffusion model,
+Baseline 2 — GTA without safety constraints (MetaDrive 25D version).
+Generates an augmented dataset using the trained MetaDrive diffusion model,
 with cost labels forced to 0.0 (no safety filtering).
 
-This creates Baseline 2: high return but high constraint violations,
-demonstrating the importance of the Safety Critic.
-
-Run: python -m safe_gta.baseline2.generate_augmented \
-         --checkpoint safe_gta/checkpoints/toy_task1_final.pt \
-         --n_augmented 5000 \
-         --output safe_gta/data/augmented_no_safety.pkl
+Run:
+  python -m safe_gta.baseline2.generate_augmented
+  python -m safe_gta.baseline2.generate_augmented \
+      --checkpoint safe_gta/checkpoints/diffusion_metadrive_final.pt \
+      --n_augmented 5000 \
+      --output safe_gta/data/augmented_no_safety.pkl
 """
 import argparse
+import glob
 import os
 import sys
 import pickle
@@ -24,153 +24,189 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from safe_gta.diffusion.noise_schedule import NoiseSchedule
 from safe_gta.diffusion.unet1d import TemporalUNet
 from safe_gta.diffusion.ddpm import DDPM
-from safe_gta.toy_task1.data_gen import (
-    normalize_trajectories,
-    denormalize_trajectories,
-)
+
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 # ---------------------------------------------------------------------------
-# OSRL dataset loading (with fallback to mock data)
+# Dataset loading
 # ---------------------------------------------------------------------------
 
-def load_osrl_trajectories(env: str = "MetaDrive-v0",
-                            quality: str = "medium",
-                            seq_len: int = 50) -> tuple[np.ndarray, dict]:
-    """
-    Tries to load real OSRL dataset.
-    Falls back to synthetic mock data if osrl-lib is not installed or env not found.
-    Returns: (trajectories: (N, seq_len, obs_dim+act_dim), meta: dict)
-    """
-    try:
-        from osrl.common.dataset import SequenceDataset
-        print(f"Loading OSRL dataset: {env}-{quality}...")
-        ds = SequenceDataset(f"{env}-{quality}-replay-v0", seq_len=seq_len)
-        observations = ds.dataset["observations"]
-        actions = ds.dataset["actions"]
-        trajs = np.concatenate([observations, actions], axis=-1)
-        print(f"  Loaded {len(trajs)} transitions, obs+act dim={trajs.shape[-1]}")
-        meta = {
-            "obs_dim": observations.shape[-1],
-            "act_dim": actions.shape[-1],
-            "source": "osrl",
-        }
-        return trajs, meta
-    except Exception as e:
-        print(f"OSRL not available ({e}), using mock MetaDrive-like data.")
-        return _make_mock_metadrive_trajs(n=3000, seq_len=seq_len)
+def load_source_trajectories(hdf5_path: str, seq_len: int = 50):
+    """Load MetaDrive HDF5 and return (N, seq_len, obs_dim+act_dim) array."""
+    import h5py
+    print(f"Loading source data: {hdf5_path}")
+    with h5py.File(hdf5_path, "r") as f:
+        obs  = f["observations"][:]
+        act  = f["actions"][:]
+        done = f["terminals"][:]
+        if "timeouts" in f:
+            done = np.logical_or(done, f["timeouts"][:]).astype(np.float32)
+
+    obs  = np.array(obs,  dtype=np.float32)
+    act  = np.array(act,  dtype=np.float32)
+    done = np.array(done, dtype=np.float32)
+
+    if obs.ndim == 3:
+        trajs = np.concatenate([obs, act], axis=-1)
+    else:
+        traj_obs_list, traj_act_list = [], []
+        N = len(obs)
+        ends = np.where(done > 0.5)[0].tolist()
+        ends.append(N - 1)
+        start = 0
+        for end in ends:
+            eo, ea = obs[start:end+1], act[start:end+1]
+            for i in range(0, len(eo) - seq_len + 1, seq_len):
+                traj_obs_list.append(eo[i:i+seq_len])
+                traj_act_list.append(ea[i:i+seq_len])
+            start = end + 1
+        if not traj_obs_list:
+            for i in range(0, N - seq_len + 1, seq_len):
+                traj_obs_list.append(obs[i:i+seq_len])
+                traj_act_list.append(act[i:i+seq_len])
+        trajs = np.concatenate([
+            np.stack(traj_obs_list),
+            np.stack(traj_act_list)
+        ], axis=-1)
+
+    print(f"  Source trajectories: {trajs.shape}")
+    return trajs, obs.shape[-1], act.shape[-1]
 
 
-def _make_mock_metadrive_trajs(n: int = 3000, seq_len: int = 50,
-                                obs_dim: int = 23, act_dim: int = 2) -> tuple[np.ndarray, dict]:
-    """
-    Mock MetaDrive-like dataset with obs_dim=23, act_dim=2.
-    Contains a mix of 'good' (low cost) and 'bad' (high cost) trajectories.
-    """
-    rng = np.random.default_rng(0)
-    n_good = int(n * 0.4)
-    n_bad = n - n_good
-
-    # good: smoother, centered
-    good_obs = rng.normal(0, 0.3, (n_good, seq_len, obs_dim)).astype(np.float32)
-    good_act = rng.normal(0, 0.1, (n_good, seq_len, act_dim)).astype(np.float32)
-
-    # bad: noisier, drifting
-    bad_obs = rng.normal(0, 1.0, (n_bad, seq_len, obs_dim)).astype(np.float32)
-    bad_act = rng.normal(0, 0.5, (n_bad, seq_len, act_dim)).astype(np.float32)
-
-    obs = np.concatenate([good_obs, bad_obs], axis=0)
-    act = np.concatenate([good_act, bad_act], axis=0)
-    trajs = np.concatenate([obs, act], axis=-1)
-    meta = {"obs_dim": obs_dim, "act_dim": act_dim, "source": "mock"}
-    return trajs, meta
+def find_hdf5(data_dir: str):
+    for name in ["metadrive_mediumsparse.hdf5", "metadrive_mediummean.hdf5",
+                 "metadrive_mediumdense.hdf5"]:
+        p = os.path.join(data_dir, name)
+        if os.path.exists(p):
+            return p
+    matches = glob.glob(os.path.join(data_dir, "*.hdf5"))
+    return matches[0] if matches else None
 
 
 # ---------------------------------------------------------------------------
-# Core generation function
+# Core generation
 # ---------------------------------------------------------------------------
 
 def generate_augmented_dataset(
-    ddpm_checkpoint: str,
+    ddpm_checkpoint: str = None,
     n_augmented: int = 5000,
-    mode: str = "repair",   # "repair": SDEdit on existing trajs | "generate": from noise
-    start_t: int = 400,
-    output_path: str = "safe_gta/data/augmented_no_safety.pkl",
+    start_t: int = 150,
+    output_path: str = None,
     seq_len: int = 50,
     batch_size: int = 64,
     device: str = None,
 ):
     """
-    Generates augmented trajectories using the trained diffusion model.
-    cost labels are FORCED TO 0.0 (Baseline 2: no safety filtering).
-
-    mode='repair':   Applies SDEdit to existing OSRL trajectories.
-                     Preserves coarse structure, removes noise. Mirrors the
-                     final Safe-GTA pipeline but WITHOUT safety guidance.
-    mode='generate': Samples unconditionally from the learned distribution.
-                     More diverse but less grounded in real data.
+    Repair MetaDrive trajectories with SDEdit.
+    Cost labels forced to 0.0 (Baseline 2: no safety filtering).
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Load model
+    data_dir = os.path.join(_PROJECT_ROOT, "safe_gta", "data")
+    ckpt_dir = os.path.join(_PROJECT_ROOT, "safe_gta", "checkpoints")
+
+    # Auto-find checkpoint
+    if ddpm_checkpoint is None:
+        candidates = [
+            os.path.join(ckpt_dir, "diffusion_metadrive_final.pt"),
+            os.path.join(ckpt_dir, "toy_task1_final.pt"),
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                ddpm_checkpoint = c
+                break
+        if ddpm_checkpoint is None:
+            raise FileNotFoundError(
+                "No diffusion checkpoint found. Run:\n"
+                "  python -m safe_gta.train_diffusion"
+            )
+
+    if output_path is None:
+        output_path = os.path.join(data_dir, "augmented_no_safety.pkl")
+
+    # Load checkpoint metadata
     payload = torch.load(ddpm_checkpoint, map_location=device, weights_only=False)
-    T = payload.get("T", 200)
+    T          = payload.get("T", 200)
+    n_features = payload.get("n_features", 2)
+    obs_dim    = payload.get("obs_dim", 2)
+    act_dim    = payload.get("act_dim", 2)
+    base_ch    = payload.get("base_ch", 32)
     norm_stats = payload.get("norm_stats", None)
+    print(f"Checkpoint: {ddpm_checkpoint}")
+    print(f"  n_features={n_features}  obs_dim={obs_dim}  act_dim={act_dim}  T={T}")
 
-    model = TemporalUNet(seq_len=seq_len, n_features=2)
+    # Load model
+    model    = TemporalUNet(seq_len=seq_len, n_features=n_features, base_ch=base_ch)
     schedule = NoiseSchedule(T=T, device=device)
-    ddpm = DDPM(model, schedule, device=device)
+    ddpm     = DDPM(model, schedule, device=device)
     ddpm.load_checkpoint(ddpm_checkpoint)
-    print(f"Loaded checkpoint from {ddpm_checkpoint}")
+    model.eval()
 
-    augmented_trajs = []
-
-    if mode == "repair":
-        source_trajs, meta = load_osrl_trajectories(seq_len=seq_len)
-        print(f"Generating {n_augmented} repaired trajectories (SDEdit, start_t={start_t})...")
-
-        # Use only obs+act first 2 dims for 2D diffusion (toy model is 2D)
-        # In production this would use the full obs_dim model
-        obs_act = source_trajs[:, :, :2]
-        obs_act_norm, repair_stats = normalize_trajectories(obs_act)
-
-        # Sample source trajectories with replacement
-        rng = np.random.default_rng(0)
-        n_batches = (n_augmented + batch_size - 1) // batch_size
-        for i in range(n_batches):
-            remaining = min(batch_size, n_augmented - len(augmented_trajs))
-            idx = rng.integers(0, len(obs_act_norm), remaining)
-            batch = obs_act_norm[idx]
-            repaired = ddpm.repair(batch, start_t=start_t)
-            repaired_raw = denormalize_trajectories(np.array(repaired), repair_stats)
-            augmented_trajs.append(repaired_raw)
-            if (i + 1) % 10 == 0:
-                print(f"  {len(augmented_trajs) * batch_size}/{n_augmented}")
-
-    elif mode == "generate":
-        print(f"Generating {n_augmented} trajectories unconditionally...")
-        n_batches = (n_augmented + batch_size - 1) // batch_size
-        for i in range(n_batches):
-            remaining = min(batch_size, n_augmented - sum(len(t) for t in augmented_trajs))
-            generated = ddpm.generate(remaining, seq_len=seq_len)
-            if norm_stats:
-                generated = denormalize_trajectories(generated, norm_stats)
-            augmented_trajs.append(generated)
+    # Load source trajectories
+    hdf5_path = find_hdf5(data_dir)
+    if hdf5_path:
+        source_trajs, src_obs_dim, src_act_dim = load_source_trajectories(hdf5_path, seq_len)
     else:
-        raise ValueError(f"Unknown mode: {mode}")
+        print("No HDF5 found, generating random source trajectories.")
+        rng = np.random.default_rng(0)
+        source_trajs = rng.normal(0, 0.3, (3000, seq_len, n_features)).astype(np.float32)
+        src_obs_dim, src_act_dim = obs_dim, act_dim
 
-    augmented = np.concatenate(augmented_trajs, axis=0)[:n_augmented]
+    # Normalize source to [-1, 1] using checkpoint's norm_stats
+    if norm_stats and "feat_min" in norm_stats:
+        feat_min   = np.array(norm_stats["feat_min"], dtype=np.float32)
+        feat_max   = np.array(norm_stats["feat_max"], dtype=np.float32)
+        feat_range = np.where(feat_max - feat_min > 1e-6, feat_max - feat_min, 1.0)
+        src = source_trajs[:, :, :n_features]
+        src_norm = 2.0 * (src - feat_min[:n_features]) / feat_range[:n_features] - 1.0
+    else:
+        src_norm = source_trajs[:, :, :n_features].copy()
 
-    # Build dataset dict — cost forced to 0.0 intentionally
+    # Repair in batches
+    print(f"Repairing {n_augmented} trajectories (SDEdit start_t={start_t})...")
+    rng = np.random.default_rng(0)
+    repaired_list = []
+    n_done = 0
+    while n_done < n_augmented:
+        bs = min(batch_size, n_augmented - n_done)
+        idx = rng.integers(0, len(src_norm), bs)
+        batch = src_norm[idx]
+        repaired_norm = ddpm.repair(batch, start_t=start_t)
+        repaired_list.append(repaired_norm)
+        n_done += bs
+        if n_done % 500 == 0 or n_done == n_augmented:
+            print(f"  {n_done}/{n_augmented}")
+
+    repaired = np.concatenate(repaired_list, axis=0)[:n_augmented]
+
+    # Denormalize back to original scale
+    if norm_stats and "feat_min" in norm_stats:
+        feat_min   = np.array(norm_stats["feat_min"][:n_features], dtype=np.float32)
+        feat_max   = np.array(norm_stats["feat_max"][:n_features], dtype=np.float32)
+        feat_range = np.where(feat_max - feat_min > 1e-6, feat_max - feat_min, 1.0)
+        repaired = (repaired + 1.0) / 2.0 * feat_range + feat_min
+
+    # Split back into obs / act
+    aug_obs = repaired[:, :, :obs_dim]
+    aug_act = repaired[:, :, obs_dim:obs_dim + act_dim]
+    if aug_act.shape[-1] == 0:
+        aug_act = np.zeros((len(repaired), seq_len, act_dim), dtype=np.float32)
+
+    # Build dataset — cost FORCED TO 0.0 (Baseline 2 intentional)
+    terminals = np.zeros((len(repaired), seq_len), dtype=np.float32)
+    terminals[:, -1] = 1.0
+
     dataset = {
-        "observations": augmented[:, :, :2].astype(np.float32),
-        "actions": np.zeros((len(augmented), seq_len, 2), dtype=np.float32),
-        "rewards": np.ones((len(augmented), seq_len), dtype=np.float32),
-        "costs": np.zeros((len(augmented), seq_len), dtype=np.float32),   # FORCED 0.0
-        "terminals": np.zeros((len(augmented), seq_len), dtype=np.float32),
-        "mode": mode,
-        "n_augmented": n_augmented,
+        "observations": aug_obs.astype(np.float32),
+        "actions":      aug_act.astype(np.float32),
+        "rewards":      np.ones( (len(repaired), seq_len), dtype=np.float32),
+        "costs":        np.zeros((len(repaired), seq_len), dtype=np.float32),
+        "terminals":    terminals,
+        "n_augmented":  n_augmented,
+        "obs_dim":      obs_dim,
+        "act_dim":      act_dim,
         "source_checkpoint": ddpm_checkpoint,
     }
 
@@ -179,28 +215,23 @@ def generate_augmented_dataset(
         pickle.dump(dataset, f)
 
     print(f"\nAugmented dataset saved: {output_path}")
-    print(f"  Trajectories: {len(augmented)}  shape: {augmented.shape}")
-    print("  Cost labels: 0.0 (no safety filtering — Baseline 2 intentional)")
+    print(f"  obs shape: {aug_obs.shape}  act shape: {aug_act.shape}")
+    print("  Cost labels: 0.0 (no safety filtering -- Baseline 2)")
     return dataset
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--checkpoint", type=str,
-                        default="safe_gta/toy_task1/safe_gta/checkpoints/toy_task1_final.pt")
+    parser.add_argument("--checkpoint", type=str, default=None)
     parser.add_argument("--n_augmented", type=int, default=5000)
-    parser.add_argument("--mode", type=str, default="repair",
-                        choices=["repair", "generate"])
-    parser.add_argument("--start_t", type=int, default=400)
-    parser.add_argument("--output", type=str,
-                        default="safe_gta/data/augmented_no_safety.pkl")
+    parser.add_argument("--start_t", type=int, default=150)
+    parser.add_argument("--output", type=str, default=None)
     parser.add_argument("--device", type=str, default=None)
     args = parser.parse_args()
 
     generate_augmented_dataset(
         ddpm_checkpoint=args.checkpoint,
         n_augmented=args.n_augmented,
-        mode=args.mode,
         start_t=args.start_t,
         output_path=args.output,
         device=args.device,

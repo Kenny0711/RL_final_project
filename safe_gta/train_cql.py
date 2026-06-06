@@ -128,36 +128,81 @@ def load_augmented_dataset(pkl_path: str, device: str = "cpu"):
     def flat1d(arr):
         return torch.tensor(arr.reshape(-1), dtype=torch.float32, device=device)
 
-    obs  = flat(data["observations"])
-    act  = flat(data["actions"])
+    obs_arr = np.asarray(data["observations"], dtype=np.float32)
+    next_obs_arr = np.concatenate([obs_arr[:, 1:], obs_arr[:, -1:]], axis=1)
+
+    obs  = flat(obs_arr)
     rew  = flat1d(data["rewards"])
     cost = flat1d(data["costs"])
     done = flat1d(data["terminals"])
-    next_obs = torch.roll(obs, -1, dims=0)
+    act  = flat(data["actions"])
+    next_obs = flat(next_obs_arr)
 
     print(f"  Loaded augmented dataset: {len(obs)} transitions  obs_dim={obs.shape[-1]}")
     print(f"  Source: {pkl_path}")
     return obs, act, rew, cost, done, next_obs
 
 
+def load_hdf5_dataset(hdf5_path: str, device: str = "cpu"):
+    """Load MetaDrive dataset directly from a downloaded .hdf5 file."""
+    import h5py
+    print(f"Loading HDF5 dataset: {hdf5_path}")
+    with h5py.File(hdf5_path, "r") as f:
+        print(f"  Keys: {list(f.keys())}")
+        obs  = torch.tensor(f["observations"][:], dtype=torch.float32, device=device)
+        act  = torch.tensor(f["actions"][:],      dtype=torch.float32, device=device)
+        rew  = torch.tensor(f["rewards"][:],      dtype=torch.float32, device=device)
+        cost = torch.tensor(f["costs"][:],        dtype=torch.float32, device=device)
+        done_np = f["terminals"][:]
+        if "timeouts" in f:
+            done_np = np.logical_or(done_np, f["timeouts"][:]).astype(np.float32)
+        done = torch.tensor(done_np, dtype=torch.float32, device=device)
+        if "next_observations" in f:
+            next_obs = torch.tensor(f["next_observations"][:], dtype=torch.float32, device=device)
+        else:
+            next_obs = torch.roll(obs, -1, dims=0)
+    print(f"  Loaded {len(obs)} transitions  obs_dim={obs.shape[-1]}  act_dim={act.shape[-1]}")
+    return obs, act, rew, cost, done, next_obs
+
+
 def load_dataset(env: str = "MetaDrive", quality: str = "medium",
                  device: str = "cpu"):
-    """Load OSRL dataset or fall back to mock data."""
+    """Load OSRL/HDF5 dataset or fall back to mock data."""
+    # 1. Try local HDF5 file first (downloaded via download_dataset.py)
+    hdf5_candidates = [
+        os.path.join(_PROJECT_ROOT, "safe_gta", "data", f"metadrive_medium{suffix}.hdf5")
+        for suffix in ["sparse", "mean", "dense"]
+    ]
+    for hdf5_path in hdf5_candidates:
+        if os.path.exists(hdf5_path):
+            return load_hdf5_dataset(hdf5_path, device)
+
+    # 2. Try dsrl gym environment (auto-downloads)
     try:
-        from osrl.common.dataset import SequenceDataset
-        print(f"Loading OSRL: {env}-{quality}...")
-        ds = SequenceDataset(f"{env}-v0-{quality}-replay-v0")
-        obs = torch.tensor(ds.dataset["observations"], dtype=torch.float32, device=device)
-        act = torch.tensor(ds.dataset["actions"], dtype=torch.float32, device=device)
-        rew = torch.tensor(ds.dataset["rewards"], dtype=torch.float32, device=device)
-        cost = torch.tensor(ds.dataset["costs"], dtype=torch.float32, device=device)
-        done = torch.tensor(ds.dataset["terminals"], dtype=torch.float32, device=device)
-        next_obs = torch.roll(obs, -1, dims=0)
+        import dsrl.offline_metadrive  # registers OfflineMetadrive-* envs
+        import gym
+        env_id = f"OfflineMetadrive-{quality}sparse-v0"
+        print(f"Loading via dsrl: {env_id} ...")
+        g_env = gym.make(env_id)
+        raw = g_env.get_dataset()
+        obs  = torch.tensor(raw["observations"], dtype=torch.float32, device=device)
+        act  = torch.tensor(raw["actions"],      dtype=torch.float32, device=device)
+        rew  = torch.tensor(raw["rewards"],      dtype=torch.float32, device=device)
+        cost = torch.tensor(raw["costs"],        dtype=torch.float32, device=device)
+        done_np = raw["terminals"]
+        if "timeouts" in raw:
+            done_np = np.logical_or(done_np, raw["timeouts"]).astype(np.float32)
+        done = torch.tensor(done_np, dtype=torch.float32, device=device)
+        if "next_observations" in raw:
+            next_obs = torch.tensor(raw["next_observations"], dtype=torch.float32, device=device)
+        else:
+            next_obs = torch.roll(obs, -1, dims=0)
         print(f"  Loaded {len(obs)} transitions  obs_dim={obs.shape[-1]}")
         return obs, act, rew, cost, done, next_obs
     except Exception as e:
-        print(f"OSRL unavailable ({e}), generating mock dataset.")
-        return _make_mock_dataset(device)
+        print(f"dsrl unavailable ({type(e).__name__}), falling back to mock dataset.")
+
+    return _make_mock_dataset(device)
 
 
 def _make_mock_dataset(device: str, n: int = 50_000, obs_dim: int = 23, act_dim: int = 2):
@@ -215,11 +260,17 @@ def train(env: str = "MetaDrive", dataset: str = "medium",
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    is_baseline2 = augmented_data is not None
-    label = "Baseline 2 — CQL + GTA (no safety)" if is_baseline2 else "Baseline 1 — CQL (no augmentation)"
+    is_augmented = augmented_data is not None
+    is_safe_gta = bool(augmented_data and "safe_gta" in os.path.basename(augmented_data).lower())
+    if is_safe_gta:
+        label = "Safe-GTA - CQL + guided GTA"
+    elif is_augmented:
+        label = "Baseline 2 - CQL + GTA (no safety)"
+    else:
+        label = "Baseline 1 - CQL (no augmentation)"
     print(f"{label}  |  device={device}")
 
-    if is_baseline2:
+    if is_augmented:
         obs, act, rew, cost, done, next_obs = load_augmented_dataset(augmented_data, device)
     else:
         obs, act, rew, cost, done, next_obs = load_dataset(env, dataset, device)
@@ -252,11 +303,21 @@ def train(env: str = "MetaDrive", dataset: str = "medium",
 
     # Final metrics
     final_metrics = evaluate(agent, obs, act, rew, cost)
-    final_metrics["method"] = "CQL_GTA_no_safety" if is_baseline2 else "CQL_no_augmentation"
-    final_metrics["dataset"] = augmented_data if is_baseline2 else dataset
+    if is_safe_gta:
+        final_metrics["method"] = "CQL_Safe_GTA"
+    elif is_augmented:
+        final_metrics["method"] = "CQL_GTA_no_safety"
+    else:
+        final_metrics["method"] = "CQL_no_augmentation"
+    final_metrics["dataset"] = augmented_data if is_augmented else dataset
     final_metrics["n_epochs"] = n_epochs
 
-    header = "BASELINE 2 — CQL + GTA (no safety)" if is_baseline2 else "BASELINE 1 — CQL FINAL RESULTS"
+    if is_safe_gta:
+        header = "SAFE-GTA - CQL + GUIDED GTA FINAL RESULTS"
+    elif is_augmented:
+        header = "BASELINE 2 - CQL + GTA (no safety)"
+    else:
+        header = "BASELINE 1 - CQL FINAL RESULTS"
     print("\n" + "=" * 50)
     print(f"  {header}")
     print("=" * 50)
@@ -266,16 +327,30 @@ def train(env: str = "MetaDrive", dataset: str = "medium",
 
     # Save results
     os.makedirs(output_dir, exist_ok=True)
-    fname = "baseline2_cql_results.json" if is_baseline2 else "baseline1_cql_results.json"
+    if is_safe_gta:
+        fname = "safe_gta_cql_results.json"
+    elif is_augmented:
+        fname = "baseline2_cql_results.json"
+    else:
+        fname = "baseline1_cql_results.json"
     results_path = os.path.join(output_dir, fname)
+    if augmented_data and "_debug" in os.path.basename(augmented_data).lower():
+        results_path = os.path.join(output_dir, "_debug_cql_results.json")
     with open(results_path, "w") as f:
         json.dump(final_metrics, f, indent=2)
     print(f"Results saved: {results_path}")
 
     # Save model
     os.makedirs(ckpt_dir, exist_ok=True)
-    ckpt_name = "baseline2_cql.pt" if is_baseline2 else "baseline1_cql.pt"
+    if is_safe_gta:
+        ckpt_name = "safe_gta_cql.pt"
+    elif is_augmented:
+        ckpt_name = "baseline2_cql.pt"
+    else:
+        ckpt_name = "baseline1_cql.pt"
     ckpt_path = os.path.join(ckpt_dir, ckpt_name)
+    if augmented_data and "_debug" in os.path.basename(augmented_data).lower():
+        ckpt_path = os.path.join(ckpt_dir, "_debug_cql.pt")
     torch.save({
         "q1": agent.q1.state_dict(),
         "q2": agent.q2.state_dict(),
