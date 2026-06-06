@@ -2,22 +2,13 @@
 
 這是 RL final project 的 Safe-GTA 專案整理版。主軸是用 **Diffusion Model** 修復 MetaDrive offline trajectory，再用 **Safety Critic** 在 denoising 過程做安全引導，最後產生 augmented dataset 給 CQL 訓練。
 
-目前已經把舊 Toy Task code 和不會產生保留結果的舊視覺化 code 清掉。照片與影片只保留在：
-
-```text
-safe_gta/results/figure/
-safe_gta/results/final_figures/
-```
-
 ## 專案目前能做什麼
 
 1. 下載 MetaDrive offline HDF5 dataset。
 2. 訓練 diffusion trajectory model。
 3. 訓練 Safety Critic。
-4. 產生 Baseline 2 的 GTA augmented dataset。
-5. 產生 Safe-GTA guided augmented dataset。
-6. 用 CQL 訓練 raw / GTA / Safe-GTA 資料。
-7. 產生報告用圖片與 fixed-map top-down replay 對比圖。
+4. 用 CQL 訓練 raw / GTA / Safe-GTA 資料。
+5. 產生報告用圖片與 fixed-map top-down replay 對比圖。
 
 ## 快速執行順序
 
@@ -191,9 +182,3 @@ ddpm.py
 
 Diffusion model 的核心模組。`train_diffusion.py`、`baseline2/generate_augmented.py` 和 `generate_safe_gta.py` 都會用到。
 
-## 目前要誠實說明的限制
-
-- 目前還沒有完整 trained CQL policy 的 MetaDrive simulator rollout 評估。
-- `evaluate_repair_3d.py` 和 `render_topdown_comparison.py` 是固定地圖 replay / validation pipeline，repair hook 目前仍是 mock。
-- Baseline 2 的 zero-cost 是人工標籤，不代表真實 simulator 安全。
-- Toy Task 只保留結果圖，不再保留 code。

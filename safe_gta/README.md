@@ -1,9 +1,6 @@
 # Safe-GTA Code 說明
 
-這份文件是給隊友看的，目標是讓大家知道目前留下來的 code 各自負責什麼、要怎麼跑、會產生什麼結果。
-
-目前只保留和 MetaDrive / Safe-GTA 主流程有關的 code，以及會產生下列資料夾中保留圖片或影片的 code：
-
+圖片
 ```text
 safe_gta/results/figure/
 safe_gta/results/final_figures/
@@ -166,11 +163,11 @@ safe_gta/results/figure/safe_gta_final_poster.png
 
 ### `download_dataset.py`
 
-下載 MetaDrive offline safe RL dataset。這支在根目錄，不在 `safe_gta/` 裡。
+下載 MetaDrive offline safe RL dataset。
 
 ### `evaluate_repair_3d.py`
 
-固定同一張 MetaDrive 地圖，先跑 baseline risky action，再重播 repaired action。它主要是驗證 pipeline 骨架，方便未來把真正的 Safe-GTA repair 接進去。
+固定同一張 MetaDrive 地圖，先跑 baseline risky action，再重播 repaired action。
 
 產出：
 
@@ -198,7 +195,7 @@ Safe-GTA 的核心生成腳本。它會：
 1. 載入 diffusion checkpoint。
 2. 載入 Safety Critic checkpoint。
 3. 從 MetaDrive dataset 抽 trajectory。
-4. 用 SDEdit 做 repair。
+4. 做 repair。
 5. 在 denoising 中加入 Safety Critic guidance。
 6. 挑 predicted cost 低的 trajectory，存成 augmented dataset。
 
@@ -212,7 +209,7 @@ Baseline 2 的資料生成器。它只使用 diffusion repair，不使用 Safety
 
 ### `safe_gta/render_topdown_comparison.py`
 
-用 MetaDrive 原生 top-down renderer 畫固定地圖 replay。這是目前最適合給 TA 看「baseline 會 out of road、repaired 可以延續且 cost=0」的圖。
+用 MetaDrive 原生 top-down renderer 畫固定地圖 replay。baseline 會 out of road、repaired 可以延續且 cost=0的圖。
 
 目前結果：
 
@@ -241,18 +238,3 @@ Diffusion noise schedule。
 
 1D temporal U-Net，用來處理 trajectory sequence。
 
-## 已刪掉的類型
-
-已刪掉的主要是：
-
-- 舊 Toy Task code。
-- 舊 proxy / schematic 視覺化 code。
-- 不會生成你保留圖片或影片的舊視覺化 code。
-- 重複或舊版下載腳本。
-- 環境檢查腳本。
-
-## 報告時要誠實說明
-
-- 目前 fixed-map replay 的 repair hook 還是 mock action repair，不是真正完整 Diffusion + Safety Critic 3D closed-loop repair。
-- Safe-GTA offline 數字來自 dataset labels / learned critic，不等於 trained CQL policy 的真實 simulator rollout。
-- Baseline 2 的 cost=0 是人工標籤設定，不代表真實安全。
