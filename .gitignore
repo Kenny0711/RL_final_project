@@ -16,6 +16,8 @@ safe_gta/**/data/*.npz
 safe_gta/results/*.npz
 safe_gta/results/data/
 safe_gta/results/artifacts/
+safe_gta/results/figure/
+safe_gta/results/final_figures/
 
 # Model checkpoints
 safe_gta/checkpoints/*.pt
